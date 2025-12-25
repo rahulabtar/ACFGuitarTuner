@@ -1,4 +1,3 @@
-
 import numpy as np
 import enum
 
@@ -7,68 +6,117 @@ class PitchMethod(enum.Enum):
     AMDF = 2
     YIN = 3
 
+
 class Pitcher:
     def __init__(self):
         self.buffer = None
+        self.buffer_size = None
         self.sampleRate = None
+        self.method = None
 
-    def setBuffer(self, buffer):
-        self.buffer = buffer
-    
+        # Pitch range (Hz)
+        self.f_min = 50.0
+        self.f_max = 500.0
+
+    def setBufferSize(self, size):
+        self.buffer_size = size
+
     def setSampleRate(self, sampleRate):
         self.sampleRate = sampleRate
 
-    def getPitchACF(self):
-        # Placeholder for ACF pitch detection implementation
-        corrs = self._getCorr(self.buffer)
-        maxima = self.findLocalMaxima(corrs)
-        if (len(maxima) < 2): print("Print, Warning Not enough maxima found, expand ACF search range")
-        return self.sampleRate / (maxima[1])
+    def setMethod(self, method: PitchMethod):
+        self.method = method
 
-    def _ACF(self, lag):
-        R = 0 
-        buffer = self.buffer
-        if lag == 0:
-            R = np.sum(buffer * buffer) 
-        else:
-            R = np.sum(buffer[:-lag] * buffer[lag:])
-        return R
+    def loadBuffer(self, block):
+        num_samples = len(block)
+        self.buffer = np.roll(self.buffer, -num_samples)
+        self.buffer[-num_samples:] = block
 
-    def _getCorr(self, samps):
-        corrs = []
-        # for lag in range(round(fs / fHigh) - 1, round(fs / fLow)):
-        for lag in range(0, len(samps)):
-            corrs.append((self._ACF(samps, lag))) 
-        return corrs
+    def getPitch(self):
+        if not self.is_note_active(db_threshold=40):
+            return None
+        if self.method == PitchMethod.ACF:
+            pitch = self._getPitchACF()
+            return pitch
+        return None
 
-    def _findLocalMaximaInter(self, corrs):
-        maxima = self.findLocalMaxima(corrs)
-        return maxima + (0.5) * ((corrs[maxima - 1]) - corrs[maxima + 1]) / (corrs[maxima - 1] - 2 * corrs[maxima] + corrs[maxima + 1])
 
-    def getCentsError(fn, freqCalc):
-        """Calculate the error in cents between two given frequencies."""
-        try:
-            val = 1200 * np.log2(freqCalc/fn)
-        except:
-            val = "/0 error"
-        finally:
-            return val
-    
-    def get_DBSPL(self):
-        return
-        """Calculate and return the dB SPL of the current buffer"""
+    def is_note_active(self, db_threshold=40):
+        """
+        Return True if the buffer contains a note above the threshold.
+        Threshold is in dB SPL.
+        """
+        if self.buffer is None:
+            return False
+        db = self.get_DBSPL()
+        return db > db_threshold
+
+
+    # --------------------------------------------------
+    # ACF with Hann window + interpolation
+    # --------------------------------------------------
+    def _getPitchACF(self):
         if self.buffer is None:
             return None
-        rms = np.sqrt(np.mean(self.buffer**2))
-        db_spl = 20 * np.log10(rms / 0.00002)
-        return db_spl
 
+        window = np.hanning(len(self.buffer))
+        x = self.buffer * window
 
-if __name__ == "__main__":
-    pitcher = Pitcher(44100)
-    # Example usage
-    buffer = np.random.rand(1024)  # Replace with actual audio buffer
-    pitcher.setBuffer(buffer)
-    pitcher.setSampleRate(44100)
-    pitch = pitcher.getPitchACF()
-    print(f"Detected Pitch: {pitch} Hz")
+        corrs, lag_min = self._getCorr(x)
+
+        peaks = self._findLocalMaxima(corrs)
+        if len(peaks) == 0:
+            return None
+
+        peak = peaks[0]
+
+        # Strength of the peak relative to zero-lag (energy)
+        peak_strength = corrs[peak] / corrs[0]
+        if peak_strength < 0.3:  # empirical threshold
+            return None  # Weak correlation → probably no note
+
+        # Parabolic interpolation
+        if 1 <= peak < len(corrs) - 1:
+            y_m1 = corrs[peak - 1]
+            y_0  = corrs[peak]
+            y_p1 = corrs[peak + 1]
+            denom = (y_m1 - 2 * y_0 + y_p1)
+            delta = 0.5 * (y_m1 - y_p1) / denom if denom != 0 else 0.0
+        else:
+            delta = 0.0
+
+        refined_lag = peak + delta + lag_min
+        return self.sampleRate / refined_lag
+
+    
+    def _ACF(self, x, lag):
+        return np.sum(x[:-lag] * x[lag:])
+
+    def _getCorr(self, x):
+        fs = self.sampleRate
+
+        lag_min = int(fs / self.f_max)
+        lag_max = int(fs / self.f_min)
+
+        corrs = np.zeros(lag_max - lag_min)
+
+        for i, lag in enumerate(range(lag_min, lag_max)):
+            corrs[i] = self._ACF(x, lag)
+
+        return corrs, lag_min
+
+    def _findLocalMaxima(self, x):
+        return [
+            i for i in range(1, len(x) - 1)
+            if x[i] > x[i - 1] and x[i] > x[i + 1]
+        ]
+
+    # --------------------------------------------------
+    # Utilities
+    # --------------------------------------------------
+    def getCentsError(self, fn, freqCalc):
+        return 1200 * np.log2(freqCalc / fn)
+
+    def get_DBSPL(self):
+        rms = np.sqrt(np.mean(self.buffer ** 2))
+        return 20 * np.log10(rms / 0.00002)

@@ -2,11 +2,10 @@ import sounddevice as sd
 import numpy as np
 import time
 
-
 class Audio_In():
     def __init__(self):
         """"Initialize Audio Input with default device and settings"""
-        self.channel = None #channel of focus
+        self.channel = 0  # default to first channel
         self.buffer = None
         self.stream = None
 
@@ -15,23 +14,24 @@ class Audio_In():
         input_devices = [dev for dev in devices if dev['max_input_channels'] > 0]
         return input_devices
     
-    def reincarnate_stream(self, device: int, sample_rate: int = 44100, channel: int = 1, buffer_size = 1024):
+    def reincarnate_stream(self, device: int, sample_rate: int = 44100, channel: int = 0, buffer_size = 1024):
         """Recreate the stream with current device and channels"""
         # Stop existing stream if running
         if self.stream is not None and self.stream.active:
             self.stream.stop()
             self.stream.close()
-            self.channel = channel
-
-        device = self.get_inputs()[device]['index']
         
-        # Recreate stream with current settings
+        self.channel = channel
+        device_info = self.get_inputs()[device]
+        num_channels = device_info['max_input_channels']  # record all channels available
+        
+        # Recreate stream with all channels
         self.stream = sd.InputStream(
-            device=device, 
-            channels=1, 
+            device=device_info['index'],
+            channels=num_channels,  # <- record all channels
             samplerate=sample_rate,
             blocksize=buffer_size,
-            callback=self.audio_callback  # You'll need this
+            callback=self.audio_callback
         )
 
     def start_stream(self):
@@ -53,25 +53,19 @@ class Audio_In():
         if status:
             print(f"Audio callback status: {status}")
         
-        # Handle any number of channels
-        # Extract the channel we're interested in
+        # indata shape: (frames, channels)
         if indata.ndim == 1:
-            # Single channel, already 1D
-            channel_data = indata
+            self.buffer = indata
         else:
-            # Multiple channels recorded, extract the one we want
-            channel_data = indata[:, self.channel]
-        
-        # Store in buffer for processing
-        self.buffer = channel_data
+            # Safely extract the channel of interest
+            if self.channel < indata.shape[1]:
+                self.buffer = indata[:, self.channel]
+            else:
+                # fallback if requested channel is out of range
+                self.buffer = indata[:, 0]
 
-    def get_DBSPL(self):
-        """Calculate and return the dB SPL of the current buffer"""
-        if self.buffer is None:
-            return None
-        rms = np.sqrt(np.mean(self.buffer**2))
-        db_spl = 20 * np.log10(rms / 0.00002)
-        return db_spl
+
+
 
 if __name__ == "__main__":
     audio_in = Audio_In()
