@@ -6,7 +6,6 @@ import time
 class Audio_In():
     def __init__(self):
         """"Initialize Audio Input with default device and settings"""
-        self.device = None #device of focus
         self.channel = None #channel of focus
         self.buffer = None
         self.stream = None
@@ -16,29 +15,22 @@ class Audio_In():
         input_devices = [dev for dev in devices if dev['max_input_channels'] > 0]
         return input_devices
     
-    def set_input(self, device_num, channel_num):
-        inputs = self.get_inputs()
-        if device_num < 0 or device_num >= len(inputs):
-            raise ValueError("Invalid device number")
-        device = inputs[device_num]
-        
-        # Get device index instead of name
-        device_index = device['index']
-        max_channels = device['max_input_channels']
-
-    def reincarnate_stream(self, device: int, sample_rate: int = 44100, channel: int = 1):
+    def reincarnate_stream(self, device: int, sample_rate: int = 44100, channel: int = 1, buffer_size = 1024):
         """Recreate the stream with current device and channels"""
         # Stop existing stream if running
         if self.stream is not None and self.stream.active:
             self.stream.stop()
             self.stream.close()
             self.channel = channel
+
+        device = self.get_inputs()[device]['index']
         
         # Recreate stream with current settings
         self.stream = sd.InputStream(
-            device=self.device,
+            device=device, 
             channels=1, 
-            samplerate=self.sample_rate,
+            samplerate=sample_rate,
+            blocksize=buffer_size,
             callback=self.audio_callback  # You'll need this
         )
 
@@ -66,12 +58,9 @@ class Audio_In():
         if indata.ndim == 1:
             # Single channel, already 1D
             channel_data = indata
-        elif self.channels == 1:
-            # We only recorded 1 channel
-            channel_data = indata[:, 0]
         else:
             # Multiple channels recorded, extract the one we want
-            channel_data = indata[:, self.selected_channel]
+            channel_data = indata[:, self.channel]
         
         # Store in buffer for processing
         self.buffer = channel_data
@@ -100,7 +89,6 @@ if __name__ == "__main__":
 
     #set the chnnel as user desires
     channel_index = int(input("Enter channel number (1-based): "))
-    audio_in.set_input(device_index, channel_index)
 
     #set the sampling rate as the user desires
     sample_rate = int(input("Enter sampling rate (e.g., 44100): "))
@@ -108,10 +96,18 @@ if __name__ == "__main__":
     #set the buffer size 
     buffer_size = int(input("Enter buffer size (e.g., 1024): "))
 
-
-    audio_in.reincarnate_stream(device_index, sample_rate, channel_index)
+    audio_in.reincarnate_stream(device_index, sample_rate, channel_index, buffer_size)
 
     audio_in.start_stream()
+    print("Audio stream started. Press Ctrl+C to stop.")
+    
+    for (i) in range(100):
+        time.sleep(0.25)
+        db_spl = audio_in.get_DBSPL()
+        if db_spl is not None:
+            print(f"Current dB SPL: {db_spl:.2f} dB")
+        else:
+            print("No audio data yet.")
 
 
 

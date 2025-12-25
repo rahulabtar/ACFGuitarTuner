@@ -25,8 +25,9 @@ class Pitcher:
         if (len(maxima) < 2): print("Print, Warning Not enough maxima found, expand ACF search range")
         return self.sampleRate / (maxima[1])
 
-    def _ACF(self, buffer, lag):
+    def _ACF(self, lag):
         R = 0 
+        buffer = self.buffer
         if lag == 0:
             R = np.sum(buffer * buffer) 
         else:
@@ -52,6 +53,15 @@ class Pitcher:
             val = "/0 error"
         finally:
             return val
+    
+    def get_DBSPL(self):
+        return
+        """Calculate and return the dB SPL of the current buffer"""
+        if self.buffer is None:
+            return None
+        rms = np.sqrt(np.mean(self.buffer**2))
+        db_spl = 20 * np.log10(rms / 0.00002)
+        return db_spl
 
 
 if __name__ == "__main__":
