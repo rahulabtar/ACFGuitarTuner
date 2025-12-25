@@ -67,28 +67,26 @@ def quadInterpolate(x, x0, y0, x1, y1, x2, y2):
     L2 = (x - x0) * (x - x1) / ((x2 - x0) * (x2 - x1))
     return y0 * L0 + y1 * L1 + y2 * L2
 
-print(quadInterpolate(6, 2, 4, 5, 25, 8, 68))
-
 
 
 #Creates a loop that increases the sampling frequency and lists key values into csv 
-# with open('ACFTest96khz.csv', 'w', newline = '') as csvfile:
-#     csvwriter = csv.writer(csvfile)
-#     # Write the header row
-#     csvwriter.writerow(['Sampling Frequency', 'True Frequency', 'Frequency Calculated', 'Cents Error', 'ACF Vals:'])
+with open('ACFTest96khz.csv', 'w', newline = '') as csvfile:
+    csvwriter = csv.writer(csvfile)
+    # Write the header row
+    csvwriter.writerow(['Sampling Frequency', 'True Frequency', 'Frequency Calculated', 'Cents Error', 'ACF Vals:'])
 
-#     #fn = 800 #about the freq of low e string guitar fundamental
-#     fs = 96000
-#     fn = 970
-#     numcycles = 10
-#     for fn in range(50, 1000, 10):
-#         numSamps = round(fs / fn * 10) #generates 3 cycles of signal
-#         samps = genSin(fn, fs, numSamps)
-#         corrs = getCorr(samps) #get ACF values for various lag 
-#         freqCalc = getFreq(corrs, fs)
-#         roundedcorrs = [round(corr, 3) for corr in corrs]
-#         centserror = getCentsError(fn, freqCalc)
-#         csvwriter.writerow([fs, fn, freqCalc, centserror] + roundedcorrs)
+    #fn = 800 #about the freq of low e string guitar fundamental
+    fs = 96000
+    fn = 970
+    numcycles = 10
+    for fn in range(50, 1000, 10):
+        numSamps = round(fs / fn * 10) #generates 3 cycles of signal
+        samps = genSin(fn, fs, numSamps)
+        corrs = getCorr(samps) #get ACF values for various lag 
+        freqCalc = getFreq(corrs, fs)
+        roundedcorrs = [round(corr, 3) for corr in corrs]
+        centserror = getCentsError(fn, freqCalc)
+        csvwriter.writerow([fs, fn, freqCalc, centserror] + roundedcorrs)
 
 
 
