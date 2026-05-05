@@ -22,22 +22,37 @@ def findLocalMaxima(corrs):
     return maxima
 
 def findLocalMaximaInter(corrs):
-    maxima = findLocalMaxima(corrs)
-    return maxima + (0.5) * ((corrs[maxima - 1]) - corrs[maxima + 1]) / (corrs[maxima - 1] - 2 * corrs[maxima] + corrs[maxima + 1])
+    corrs = np.array(corrs)
+    maxima = np.array(findLocalMaxima(corrs))
+    if len(maxima) == 0:
+        return maxima
+    return maxima + 0.5 * (corrs[maxima - 1] - corrs[maxima + 1]) / \
+                         (corrs[maxima - 1] - 2 * corrs[maxima] + corrs[maxima + 1])
 
-#utilizes finding local maxima to calculate the distance between 
-def getFreq(corrs,fs, interpolate = True):
-    maxima = findLocalMaxima(corrs)
-    if (len(maxima) < 2): return 0
-    return fs / (maxima[1] - maxima[0])
-    
+def getFreq(corrs, fs, interpolate=True):
+    maxima = findLocalMaximaInter(corrs)
+    if len(maxima) < 2:
+        return 0
+    # Average period over all found maxima
+    return fs * (len(maxima) - 1) / (maxima[-1] - maxima[0])
+
 #find the correlation values for the entire buffer, return a list of corrs corresponding to different lag values
-def getCorr(samps):
-    corrs = []
-    # for lag in range(round(fs / fHigh) - 1, round(fs / fLow)):
-    for lag in range(0, len(samps)):
-         corrs.append((ACF(samps, lag))) 
-    return corrs
+def getCorr(samps, method='fft'):
+    if method == 'fft':
+        n = len(samps)
+        fft = np.fft.rfft(samps, n=2 * n)
+        power = fft * np.conj(fft)
+        corrs = np.fft.irfft(power)[:n]
+        return corrs.real
+    
+    elif method == 'direct':
+        corrs = []
+        for lag in range(0, len(samps)):
+            corrs.append(ACF(samps, lag))
+        return corrs
+    
+    else:
+        raise ValueError(f"Unknown method '{method}'. Choose 'fft' or 'direct'.")
 
 #scales the data between -1 and 1
 def maxAbsoluteScaling(data):
@@ -54,12 +69,9 @@ def genSin(f, fs, numSamp):
 
 #gets the error in cents between two given frequencies
 def getCentsError(fn, freqCalc):
-    try:
-        val = 1200 * np.log2(freqCalc/fn)
-    except:
-        val = "/0 error"
-    finally:
-        return val
+    if freqCalc <= 0:
+        return "div/0 error"
+    return 1200 * np.log2(freqCalc / fn)
 
 def quadInterpolate(x, x0, y0, x1, y1, x2, y2):
     L0 = (x - x1) * (x - x2) / ((x0 - x1) * (x0 - x2))
@@ -67,26 +79,25 @@ def quadInterpolate(x, x0, y0, x1, y1, x2, y2):
     L2 = (x - x0) * (x - x1) / ((x2 - x0) * (x2 - x1))
     return y0 * L0 + y1 * L1 + y2 * L2
 
-
-
 #Creates a loop that increases the sampling frequency and lists key values into csv 
-with open('ACFTest96khz.csv', 'w', newline = '') as csvfile:
+with open('ACFTest48khz.csv', 'w', newline = '') as csvfile:
     csvwriter = csv.writer(csvfile)
     # Write the header row
     csvwriter.writerow(['Sampling Frequency', 'True Frequency', 'Frequency Calculated', 'Cents Error', 'ACF Vals:'])
 
     #fn = 800 #about the freq of low e string guitar fundamental
-    fs = 96000
+    fs = 48000
     fn = 970
     numcycles = 10
-    for fn in range(50, 1000, 10):
+    for fn in range(50, 1000, 50):
         numSamps = round(fs / fn * 10) #generates 3 cycles of signal
         samps = genSin(fn, fs, numSamps)
         corrs = getCorr(samps) #get ACF values for various lag 
         freqCalc = getFreq(corrs, fs)
         roundedcorrs = [round(corr, 3) for corr in corrs]
         centserror = getCentsError(fn, freqCalc)
-        csvwriter.writerow([fs, fn, freqCalc, centserror] + roundedcorrs)
+        csvwriter.writerow([fs, fn, freqCalc, centserror])
+    print("Done")
 
 
 
